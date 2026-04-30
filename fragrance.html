@@ -3894,8 +3894,11 @@ if (rawBrand && rawName && match) {
 
           function toNoteArray(val) {
             if (!val) return [];
-            if (Array.isArray(val)) return val.filter(Boolean);
-            return String(val).split(/[,;|]/).map(n => n.trim()).filter(Boolean);
+            const raw = Array.isArray(val) ? val : [val];
+            return raw
+              .flatMap(item => String(item).split(/[,;|]/))
+              .map(n => n.trim())
+              .filter(Boolean);
           }
 
           function noteCard(noteName) {
