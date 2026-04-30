@@ -160,26 +160,27 @@ function getNoteIconSVG(noteName) {
   return CATEGORY_SVGS[category] || CATEGORY_SVGS['generic'];
 }
 
-// Get accent color for note icon background based on category
+// Get accent color for note icon tinting based on category.
+// Card background is always dark; only the border and icon circle use category colour.
 function getNoteAccentColor(noteName) {
   const normalized = normalizeNoteName(noteName);
   const category = detectNoteCategory(normalized);
   const colors = {
-    citrus:   { bg: 'rgba(240,192,60,0.15)',  border: 'rgba(240,192,60,0.35)' },
-    floral:   { bg: 'rgba(240,140,180,0.15)', border: 'rgba(240,140,180,0.35)' },
-    woody:    { bg: 'rgba(139,90,43,0.18)',   border: 'rgba(139,90,43,0.4)' },
-    fruity:   { bg: 'rgba(220,80,80,0.15)',   border: 'rgba(220,80,80,0.35)' },
-    gourmand: { bg: 'rgba(192,120,40,0.18)',  border: 'rgba(192,120,40,0.4)' },
-    aquatic:  { bg: 'rgba(64,144,200,0.15)',  border: 'rgba(64,144,200,0.35)' },
-    smoky:    { bg: 'rgba(110,110,120,0.18)', border: 'rgba(110,110,120,0.4)' },
-    musky:    { bg: 'rgba(196,160,120,0.15)', border: 'rgba(196,160,120,0.35)' },
-    leather:  { bg: 'rgba(122,72,40,0.18)',   border: 'rgba(122,72,40,0.4)' },
-    amber:    { bg: 'rgba(212,160,48,0.18)',  border: 'rgba(212,160,48,0.4)' },
-    spicy:    { bg: 'rgba(192,64,32,0.15)',   border: 'rgba(192,64,32,0.35)' },
-    green:    { bg: 'rgba(74,144,64,0.15)',   border: 'rgba(74,144,64,0.35)' },
-    powdery:  { bg: 'rgba(208,176,192,0.15)', border: 'rgba(208,176,192,0.35)' },
-    fresh:    { bg: 'rgba(96,192,208,0.15)',  border: 'rgba(96,192,208,0.35)' },
-    generic:  { bg: 'rgba(212,175,55,0.12)',  border: 'rgba(212,175,55,0.3)' },
+    citrus:   { border: 'rgba(240,192,60,0.28)',  borderHover: 'rgba(240,192,60,0.55)',  iconBg: 'rgba(240,192,60,0.1)' },
+    floral:   { border: 'rgba(230,130,160,0.28)', borderHover: 'rgba(230,130,160,0.55)', iconBg: 'rgba(230,130,160,0.1)' },
+    woody:    { border: 'rgba(160,110,60,0.3)',   borderHover: 'rgba(160,110,60,0.58)',  iconBg: 'rgba(139,90,43,0.12)' },
+    fruity:   { border: 'rgba(210,80,80,0.28)',   borderHover: 'rgba(210,80,80,0.55)',   iconBg: 'rgba(210,80,80,0.1)' },
+    gourmand: { border: 'rgba(200,140,50,0.3)',   borderHover: 'rgba(200,140,50,0.58)',  iconBg: 'rgba(192,120,40,0.12)' },
+    aquatic:  { border: 'rgba(60,140,200,0.28)',  borderHover: 'rgba(60,140,200,0.55)',  iconBg: 'rgba(60,140,200,0.1)' },
+    smoky:    { border: 'rgba(140,130,120,0.3)',  borderHover: 'rgba(140,130,120,0.58)', iconBg: 'rgba(110,110,120,0.12)' },
+    musky:    { border: 'rgba(200,168,130,0.28)', borderHover: 'rgba(200,168,130,0.55)', iconBg: 'rgba(196,160,120,0.1)' },
+    leather:  { border: 'rgba(150,90,50,0.3)',    borderHover: 'rgba(150,90,50,0.58)',   iconBg: 'rgba(122,72,40,0.12)' },
+    amber:    { border: 'rgba(212,168,55,0.3)',   borderHover: 'rgba(212,168,55,0.58)',  iconBg: 'rgba(212,160,48,0.12)' },
+    spicy:    { border: 'rgba(200,80,40,0.28)',   borderHover: 'rgba(200,80,40,0.55)',   iconBg: 'rgba(192,64,32,0.1)' },
+    green:    { border: 'rgba(80,158,70,0.28)',   borderHover: 'rgba(80,158,70,0.55)',   iconBg: 'rgba(74,144,64,0.1)' },
+    powdery:  { border: 'rgba(210,180,195,0.25)', borderHover: 'rgba(210,180,195,0.5)',  iconBg: 'rgba(208,176,192,0.1)' },
+    fresh:    { border: 'rgba(80,190,210,0.28)',  borderHover: 'rgba(80,190,210,0.55)',  iconBg: 'rgba(96,192,208,0.1)' },
+    generic:  { border: 'rgba(212,175,55,0.22)',  borderHover: 'rgba(212,175,55,0.5)',   iconBg: 'rgba(212,175,55,0.08)' },
   };
   return colors[category] || colors['generic'];
 }
