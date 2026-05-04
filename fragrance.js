@@ -288,6 +288,8 @@ async function saveRating(rating) {
       .upsert({
         user_id: currentUser.id,
         fragrance_id: fragranceId,
+        fragrance_brand: currentFragranceBrand || null,
+        fragrance_name: currentFragranceName || null,
         rating: rating
       }, {
         onConflict: 'user_id,fragrance_id'
@@ -588,6 +590,8 @@ async function postComment(content, parentId) {
       .insert({
         user_id: currentUser.id,
         fragrance_id: fragranceId,
+        fragrance_brand: currentFragranceBrand || null,
+        fragrance_name: currentFragranceName || null,
         parent_id: parentId,
         comment: content
       });
@@ -1692,7 +1696,9 @@ async function saveToCollection(collectionId, collectionName) {
       .from('collection_items')
       .insert({
         collection_id: collectionId,
-        fragrance_id: canonicalId
+        fragrance_id: canonicalId,
+        fragrance_brand: currentFragranceBrand || null,
+        fragrance_name: currentFragranceName || null
       });
 
     if (insertError) {
@@ -1746,7 +1752,9 @@ const { error: insertError } = await supabase
   .from('collection_items')
   .insert({
     collection_id: newCollection.id,
-    fragrance_id: canonicalId
+    fragrance_id: canonicalId,
+    fragrance_brand: currentFragranceBrand || null,
+    fragrance_name: currentFragranceName || null
   });
 
 
