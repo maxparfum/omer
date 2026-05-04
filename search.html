@@ -186,6 +186,22 @@
     @media (max-width: 768px) {
       .results-title { font-size: 34px; }
     }
+
+    /* Community signal line on search cards */
+    .card-community {
+      margin-top: 6px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.67rem;
+      color: rgba(194,194,194,0.55);
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-community .cc-gold {
+      color: rgba(212,175,55,0.8);
+    }
   </style>
 <link rel="stylesheet" href="navbar.css">
 </head>
@@ -510,10 +526,12 @@ window.location.href = `fragrance.html?brand=${encodeURIComponent(item.brand || 
     if (matches.length > 0) {
       console.log(`✅ Found ${matches.length} matches`);
 
+      // Map card DOM nodes by brand|||name key so community signals can update them later
+      const cardNodeMap = new Map();
+
       matches.forEach(function(item) {
         var card = document.createElement('div');
         card.className = 'card';
-        
 
         const overrideKey = makeOverrideKey(item.brand || '', item.name || '');
         const resolvedImage = imageOverrideMap.get(overrideKey) || item.image || 'https://via.placeholder.com/200';
@@ -522,13 +540,31 @@ window.location.href = `fragrance.html?brand=${encodeURIComponent(item.brand || 
           '<h3>' + capitalizeWords(escapeHtml(item.brand || '')) + ' – ' + capitalizeWords(escapeHtml(item.name || '')) + '</h3>';
 
         card.addEventListener('click', function() {
-  sessionStorage.setItem('mp:selectedFragrance', JSON.stringify(item));
- window.location.href =
-  `fragrance.html?brand=${encodeURIComponent(item.brand || '')}&name=${encodeURIComponent(item.name || '')}`;
-});
+          sessionStorage.setItem('mp:selectedFragrance', JSON.stringify(item));
+          window.location.href =
+            `fragrance.html?brand=${encodeURIComponent(item.brand || '')}&name=${encodeURIComponent(item.name || '')}`;
+        });
 
         resultsDiv.appendChild(card);
+        const mapKey = `${(item.brand || '').toLowerCase()}|||${(item.name || '').toLowerCase()}`;
+        cardNodeMap.set(mapKey, card);
       });
+
+      // Load community signals asynchronously without blocking the render
+      import('./community-activity.js').then(function(mod) {
+        mod.getSearchActivityStats(matches).then(function(statsMap) {
+          statsMap.forEach(function(stats, key) {
+            const cardNode = cardNodeMap.get(key);
+            if (!cardNode || !stats.ratingCount) return;
+            const signal = document.createElement('p');
+            signal.className = 'card-community';
+            let text = `<span class="cc-gold">⭐ ${stats.ratingCount}</span> rating${stats.ratingCount !== 1 ? 's' : ''}`;
+            if (stats.topRater) text += ` · recently by <span class="cc-gold">${stats.topRater}</span>`;
+            signal.innerHTML = text;
+            cardNode.appendChild(signal);
+          });
+        }).catch(function() { /* silently ignore */ });
+      }).catch(function() { /* silently ignore if module unavailable */ });
     } else {
       console.log('❌ No matches found');
       noResultsDiv.style.display = 'block';

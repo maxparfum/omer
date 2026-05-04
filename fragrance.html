@@ -2546,6 +2546,93 @@ header {
       }
     }
     
+    /* ── Community Activity (fragrance page) ────────────────────── */
+    .frag-community {
+      margin: 20px 0 0;
+      border-top: 1px solid rgba(212,175,55,0.14);
+      padding-top: 16px;
+    }
+
+    .frag-community-title {
+      font-family: 'Cinzel', serif;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #d4af37;
+      margin: 0 0 12px;
+    }
+
+    .frag-community-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 20px;
+      margin-bottom: 14px;
+    }
+
+    .frag-stat {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.75rem;
+      color: rgba(220,220,220,0.8);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .frag-stat-num {
+      color: #d4af37;
+      font-weight: 600;
+    }
+
+    .frag-activity-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .frag-activity-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.72rem;
+      color: rgba(220,220,220,0.8);
+      line-height: 1.35;
+    }
+
+    .frag-activity-item .cp-avatar {
+      width: 26px;
+      height: 26px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .frag-activity-actor {
+      color: #d4af37;
+      font-weight: 600;
+    }
+
+    .frag-activity-time {
+      margin-left: auto;
+      white-space: nowrap;
+      color: rgba(194,194,194,0.38);
+      font-size: 0.62rem;
+      flex-shrink: 0;
+      padding-left: 6px;
+    }
+
+    .frag-community-empty {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.75rem;
+      color: rgba(194,194,194,0.5);
+      padding: 6px 0;
+    }
+    /* ── end Community Activity ──────────────────────────────────── */
+
     /* Main Accords Styles */
     .main-accords {
       margin: 20px 0;
@@ -3193,6 +3280,12 @@ header {
         </div>
         <div class="collection-message" id="collection-message"></div>
         <div class="collection-status" id="collection-status"></div>
+      </div>
+
+      <div class="frag-community" id="frag-community" style="display:none;">
+        <p class="frag-community-title">Community Activity</p>
+        <div class="frag-community-stats" id="frag-community-stats"></div>
+        <div class="frag-activity-feed" id="frag-activity-feed"></div>
       </div>
 
       <div class="comments-section">
@@ -5485,6 +5578,68 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <script>
   lucide.createIcons();
+</script>
+
+<script type="module">
+import { getFragranceCommunityStats, getFragranceActivity, timeAgo, avatarHtml } from './community-activity.js';
+
+function statPill(icon, count, label) {
+  return `<span class="frag-stat">${icon} <span class="frag-stat-num">${count}</span> ${label}</span>`;
+}
+
+function activityRow(item) {
+  const avatar = avatarHtml(item.avatarUrl, item.actor);
+  return `<div class="frag-activity-item">
+    ${avatar}
+    <span><span class="frag-activity-actor">${item.actor}</span> ${item.action}</span>
+    <span class="frag-activity-time">${timeAgo(item.createdAt)}</span>
+  </div>`;
+}
+
+async function loadFragCommunity() {
+  // Read brand/name from URL query params — same system as the rest of the page
+  const params = new URLSearchParams(window.location.search);
+  const brand = params.get('brand') || '';
+  const name  = params.get('name')  || '';
+  if (!brand && !name) return;
+
+  const section   = document.getElementById('frag-community');
+  const statsEl   = document.getElementById('frag-community-stats');
+  const feedEl    = document.getElementById('frag-activity-feed');
+  if (!section || !statsEl || !feedEl) return;
+
+  const [stats, activity] = await Promise.all([
+    getFragranceCommunityStats(brand, name),
+    getFragranceActivity(brand, name, 5),
+  ]);
+
+  // Build stats line
+  const statParts = [];
+  if (stats) {
+    if (stats.ratings)       statParts.push(statPill('⭐', stats.ratings, 'ratings'));
+    if (stats.comments)      statParts.push(statPill('💬', stats.comments, 'comments'));
+    if (stats.collections)   statParts.push(statPill('🧴', stats.collections, 'collections'));
+    if (stats.recentRatings) statParts.push(statPill('🔥', stats.recentRatings, 'rated this week'));
+  }
+
+  // Build activity feed
+  const feedRows = activity.map(activityRow).join('');
+
+  const hasContent = statParts.length || feedRows;
+  if (!hasContent) {
+    // Show empty prompt but don't display the section title without content
+    section.style.display = 'block';
+    statsEl.innerHTML = '';
+    feedEl.innerHTML = `<p class="frag-community-empty">Be the first to rate this fragrance.</p>`;
+    return;
+  }
+
+  statsEl.innerHTML = statParts.join('');
+  feedEl.innerHTML  = feedRows;
+  section.style.display = 'block';
+}
+
+document.addEventListener('DOMContentLoaded', loadFragCommunity);
 </script>
 </body>
 </html>
