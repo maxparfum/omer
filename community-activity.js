@@ -4,19 +4,52 @@
 
 import { supabase } from './supabase.js';
 
-// ─── Activity type labels ────────────────────────────────────────────────────
+// ─── Fragrance name resolution ───────────────────────────────────────────────
 
-function _fragName(row) {
+// Loaded once on first call, shared across all resolutions on the page.
+let _fragrancesDb = null;
+async function _loadFragrancesDb() {
+  if (_fragrancesDb !== null) return _fragrancesDb;
+  try {
+    const res = await fetch('./fragrances_merged.json');
+    _fragrancesDb = await res.json();
+  } catch (_) {
+    _fragrancesDb = [];
+  }
+  return _fragrancesDb;
+}
+
+function _fragNameFromRow(row) {
+  // 1. Direct columns on the view row
   const brand = row.fragrance_brand || (row.metadata && row.metadata.fragrance_brand);
   const name  = row.fragrance_name  || (row.metadata && row.metadata.fragrance_name);
   if (brand && name)  return `${brand} ${name}`;
   if (name)           return name;
   if (brand)          return brand;
-  return 'a fragrance';
+  return null; // caller will try JSON lookup
 }
 
+function _resolveFromDb(fragId, db) {
+  if (!fragId || !db || !db.length) return null;
+  const id = String(fragId).toLowerCase();
+  const match = db.find(f => {
+    if (!f) return false;
+    if (String(f.id || '').toLowerCase() === id) return true;
+    // canonical id pattern: "brand-name"
+    const canonical = `${(f.brand || '')}---${(f.name || '')}`.toLowerCase().replace(/\s+/g, '-');
+    return canonical === id;
+  });
+  if (!match) return null;
+  const b = (match.brand || '').trim();
+  const n = (match.name  || '').trim();
+  if (b && n) return `${b} ${n}`;
+  return n || b || null;
+}
+
+// ─── Activity type labels ────────────────────────────────────────────────────
+
 function _stars(row) {
-  const v = (row.metadata && (row.metadata.rating ?? row.metadata.rating_value));
+  const v = row.metadata && (row.metadata.rating ?? row.metadata.rating_value);
   if (v == null || v === '') return '';
   return `${parseFloat(v).toFixed(1)} stars`;
 }
@@ -27,28 +60,19 @@ function _scentleGuesses(row) {
   return ` in ${g} ${g === 1 ? 'guess' : 'guesses'}`;
 }
 
-function _forumTitle(row, prefix) {
-  const title = row.metadata && (row.metadata.thread_title || row.metadata.title);
-  if (title) return `${prefix}: ${title}`;
-  return prefix.toLowerCase();
-}
+// ─── Actor display name ───────────────────────────────────────────────────────
 
-const ACTIVITY_LABELS = {
-  rating:          (r) => { const s = _stars(r); return `rated ${_fragName(r)}${s ? ' ' + s : ''}`; },
-  review:          (r) => `reviewed ${_fragName(r)}`,
-  collection_add:  (r) => `added ${_fragName(r)} to their collection`,
-  battle_vote:     (_) => `played Fragrance Battle`,
-  forum_thread:    (r) => _forumTitle(r, 'started a discussion'),
-  forum_reply:     (r) => _forumTitle(r, 'replied to'),
-  scentle_complete:(r) => `completed today's Scentle${_scentleGuesses(r)}`,
-};
+// Account-required types: never show "Someone"
+const ACCOUNT_REQUIRED = new Set(['rating', 'review', 'collection_add', 'forum_thread', 'forum_reply']);
 
-// ─── Display name / avatar helpers ──────────────────────────────────────────
-
-function safeDisplayName(row) {
+function _actorName(row) {
   const name = row.username || row.display_name;
   if (name) return '@' + name.replace(/^@/, '');
-  return 'A MaxParfum member';
+
+  const isAccountRequired = ACCOUNT_REQUIRED.has(row.activity_type) ||
+    (row.activity_type === 'scentle_complete' && row.user_id);
+
+  return isAccountRequired ? 'MaxParfum member' : 'Someone';
 }
 
 export function avatarHtml(avatarUrl, actor) {
@@ -65,11 +89,71 @@ export function avatarHtml(avatarUrl, actor) {
 
 // ─── Format a view row into a display object ─────────────────────────────────
 
+// Synchronous fast path — used when the fragrances DB is already loaded.
+function _buildAction(row, resolvedFragName) {
+  const type = row.activity_type;
+
+  if (type === 'rating') {
+    const frag = resolvedFragName || 'a fragrance';
+    const s    = _stars(row);
+    return `rated ${frag}${s ? ' ' + s : ''}`;
+  }
+  if (type === 'review')         return `reviewed ${resolvedFragName || 'a fragrance'}`;
+  if (type === 'collection_add') return `added ${resolvedFragName || 'a fragrance'} to their collection`;
+  if (type === 'battle_vote')    return `played Fragrance Battle`;
+  if (type === 'forum_thread')   return `started a discussion`;
+  if (type === 'forum_reply')    return `replied to a discussion`;
+  if (type === 'scentle_complete') return `completed today's Scentle${_scentleGuesses(row)}`;
+  return `did something with ${resolvedFragName || 'a fragrance'}`;
+}
+
+// Async version that resolves fragrance name from JSON if needed.
+export async function formatActivityItemAsync(row) {
+  const actor     = _actorName(row);
+  const avatarUrl = row.avatar_url || null;
+
+  // battle_vote never needs a fragrance name
+  let resolvedFragName = null;
+  if (row.activity_type !== 'battle_vote') {
+    resolvedFragName = _fragNameFromRow(row);
+    if (!resolvedFragName && row.fragrance_id) {
+      const db = await _loadFragrancesDb();
+      resolvedFragName = _resolveFromDb(row.fragrance_id, db);
+    }
+    // final fallback: "a fragrance" — set here so _buildAction receives it
+    resolvedFragName = resolvedFragName || 'a fragrance';
+  }
+
+  const action = _buildAction(row, resolvedFragName);
+
+  let url = row.target_url || null;
+  if (!url && row.fragrance_brand && row.fragrance_name) {
+    url = `fragrance.html?brand=${encodeURIComponent(row.fragrance_brand)}&name=${encodeURIComponent(row.fragrance_name)}`;
+  }
+
+  return {
+    id:             row.id,
+    actor,
+    avatarUrl,
+    action,
+    activityType:   row.activity_type,
+    fragranceBrand: row.fragrance_brand,
+    fragranceName:  row.fragrance_name,
+    url,
+    createdAt:      row.created_at,
+    metadata:       row.metadata || {},
+  };
+}
+
+// Sync shim kept for any callers that don't need JSON fallback.
 export function formatActivityItem(row) {
-  const actor    = safeDisplayName(row);
-  const avatarUrl= row.avatar_url || null;
-  const labelFn  = ACTIVITY_LABELS[row.activity_type];
-  const action   = labelFn ? labelFn(row) : `did something with ${_fragName(row)}`;
+  const actor     = _actorName(row);
+  const avatarUrl = row.avatar_url || null;
+  let resolvedFragName = null;
+  if (row.activity_type !== 'battle_vote') {
+    resolvedFragName = _fragNameFromRow(row) || 'a fragrance';
+  }
+  const action = _buildAction(row, resolvedFragName);
 
   let url = row.target_url || null;
   if (!url && row.fragrance_brand && row.fragrance_name) {
@@ -123,7 +207,7 @@ export async function getCommunityPulse(limit = 12) {
       console.warn('[CommunityPulse] query failed:', error.message);
       return [];
     }
-    return (data || []).map(formatActivityItem);
+    return await Promise.all((data || []).map(formatActivityItemAsync));
   } catch (err) {
     console.warn('[CommunityPulse] unexpected error:', err.message);
     return [];
@@ -151,7 +235,7 @@ export async function getFragranceActivity(brand, name, limit = 5) {
       console.warn('[CommunityPulse] fragrance activity query failed:', error.message);
       return [];
     }
-    return (data || []).map(formatActivityItem);
+    return await Promise.all((data || []).map(formatActivityItemAsync));
   } catch (err) {
     console.warn('[CommunityPulse] unexpected error:', err.message);
     return [];
