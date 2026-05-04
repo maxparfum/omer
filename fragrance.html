@@ -5581,7 +5581,12 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <script type="module">
+import { supabase } from './supabase.js';
 import { getFragranceCommunityStats, getFragranceActivity, timeAgo, avatarHtml } from './community-activity.js';
+
+const _params = new URLSearchParams(window.location.search);
+const _brand  = _params.get('brand') || '';
+const _name   = _params.get('name')  || '';
 
 function statPill(icon, count, label) {
   return `<span class="frag-stat">${icon} <span class="frag-stat-num">${count}</span> ${label}</span>`;
@@ -5597,40 +5602,33 @@ function activityRow(item) {
 }
 
 async function loadFragCommunity() {
-  // Read brand/name from URL query params — same system as the rest of the page
-  const params = new URLSearchParams(window.location.search);
-  const brand = params.get('brand') || '';
-  const name  = params.get('name')  || '';
-  if (!brand && !name) return;
+  if (!_brand && !_name) return;
 
-  const section   = document.getElementById('frag-community');
-  const statsEl   = document.getElementById('frag-community-stats');
-  const feedEl    = document.getElementById('frag-activity-feed');
+  const section = document.getElementById('frag-community');
+  const statsEl = document.getElementById('frag-community-stats');
+  const feedEl  = document.getElementById('frag-activity-feed');
   if (!section || !statsEl || !feedEl) return;
 
   const [stats, activity] = await Promise.all([
-    getFragranceCommunityStats(brand, name),
-    getFragranceActivity(brand, name, 5),
+    getFragranceCommunityStats(_brand, _name),
+    getFragranceActivity(_brand, _name, 5),
   ]);
 
-  // Build stats line
   const statParts = [];
   if (stats) {
     if (stats.ratings)       statParts.push(statPill('⭐', stats.ratings, 'ratings'));
-    if (stats.comments)      statParts.push(statPill('💬', stats.comments, 'comments'));
+    if (stats.comments)      statParts.push(statPill('💬', stats.comments, 'reviews'));
     if (stats.collections)   statParts.push(statPill('🧴', stats.collections, 'collections'));
     if (stats.recentRatings) statParts.push(statPill('🔥', stats.recentRatings, 'rated this week'));
   }
 
-  // Build activity feed
   const feedRows = activity.map(activityRow).join('');
-
   const hasContent = statParts.length || feedRows;
+
   if (!hasContent) {
-    // Show empty prompt but don't display the section title without content
     section.style.display = 'block';
     statsEl.innerHTML = '';
-    feedEl.innerHTML = `<p class="frag-community-empty">Be the first to rate this fragrance.</p>`;
+    feedEl.innerHTML  = `<p class="frag-community-empty">Be the first to rate this fragrance.</p>`;
     return;
   }
 
@@ -5639,7 +5637,41 @@ async function loadFragCommunity() {
   section.style.display = 'block';
 }
 
-document.addEventListener('DOMContentLoaded', loadFragCommunity);
+// Debounce so rapid realtime bursts cause only one refresh
+let _fragDebounce = null;
+function debouncedFragRefresh() {
+  clearTimeout(_fragDebounce);
+  _fragDebounce = setTimeout(loadFragCommunity, 1500);
+}
+
+function subscribeToFragActivity() {
+  if (!_brand && !_name) return;
+  try {
+    const channel = supabase
+      .channel('community-frag-' + encodeURIComponent(_brand + _name))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'activity_events',
+      }, debouncedFragRefresh)
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[CommunityPulse] fragrance realtime unavailable');
+        }
+      });
+
+    window.addEventListener('beforeunload', () => {
+      supabase.removeChannel(channel);
+    });
+  } catch (err) {
+    console.warn('[CommunityPulse] could not subscribe to realtime:', err.message);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadFragCommunity();
+  subscribeToFragActivity();
+});
 </script>
 </body>
 </html>

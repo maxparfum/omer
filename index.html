@@ -2673,7 +2673,8 @@ const item = nameParam ? findBestMatch(data, nameParam) : null;
 </script>
 
 <script type="module">
-import { getCommunityPulse, formatActivityItem, timeAgo, avatarHtml } from './community-activity.js';
+import { supabase } from './supabase.js';
+import { getCommunityPulse, timeAgo, avatarHtml } from './community-activity.js';
 
 const FALLBACKS = [
   { icon: '⭐', text: 'Start rating fragrances', href: 'search.html?q=' },
@@ -2714,7 +2715,6 @@ async function loadCommunityPulse() {
     return;
   }
 
-  // If fewer than 4 real items, pad with fallbacks
   let html = display.map(activityCard).join('');
   if (display.length < 4) {
     const needed = 4 - display.length;
@@ -2723,7 +2723,40 @@ async function loadCommunityPulse() {
   container.innerHTML = html;
 }
 
-document.addEventListener('DOMContentLoaded', loadCommunityPulse);
+// Debounce so rapid bursts of realtime events trigger only one refresh
+let _pulseDebounce = null;
+function debouncedRefresh() {
+  clearTimeout(_pulseDebounce);
+  _pulseDebounce = setTimeout(loadCommunityPulse, 1500);
+}
+
+function subscribeToActivityEvents() {
+  try {
+    const channel = supabase
+      .channel('community-pulse-home')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'activity_events',
+      }, debouncedRefresh)
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[CommunityPulse] realtime subscription error — live updates unavailable');
+        }
+      });
+
+    window.addEventListener('beforeunload', () => {
+      supabase.removeChannel(channel);
+    });
+  } catch (err) {
+    console.warn('[CommunityPulse] could not subscribe to realtime:', err.message);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadCommunityPulse();
+  subscribeToActivityEvents();
+});
 </script>
 </body>
 </html>

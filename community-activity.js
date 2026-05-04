@@ -1,75 +1,126 @@
 // community-activity.js — Community Pulse helper for MaxParfum
-// Queries activity_events and profiles from Supabase.
-// All queries are defensive: if the table doesn't exist or the query fails,
-// functions return empty arrays / null and log a warning only.
+// Queries community_activity_feed view (backed by activity_events + public.users).
+// Never queries profiles. All user fields come from the view.
 
 import { supabase } from './supabase.js';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Activity type labels ────────────────────────────────────────────────────
 
-function safeDisplayName(profile) {
-  if (!profile) return 'A MaxParfum member';
-  const username = profile.username || profile.display_name || profile.full_name;
-  if (username) return '@' + username.replace(/^@/, '');
-  return 'A MaxParfum member';
+function _fragName(row) {
+  const brand = row.fragrance_brand || (row.metadata && row.metadata.fragrance_brand);
+  const name  = row.fragrance_name  || (row.metadata && row.metadata.fragrance_name);
+  if (brand && name)  return `${brand} ${name}`;
+  if (name)           return name;
+  if (brand)          return brand;
+  return 'a fragrance';
 }
 
-function safeAvatarUrl(profile) {
-  return (profile && profile.avatar_url) || null;
-}
-
-const ACTIVITY_LABELS = {
-  rating:        (a) => `rated ${_fragName(a)} ${_stars(a)}`,
-  review:        (a) => `reviewed ${_fragName(a)}`,
-  collection_add:(a) => `added ${_fragName(a)} to their collection`,
-  battle_pick:   (a) => `picked ${_fragName(a)} in a battle`,
-  scentle:       (a) => `completed today's Scentle${_scentleGuesses(a)}`,
-  forum_post:    (a) => `joined a discussion`,
-  comment:       (a) => `commented on ${_fragName(a)}`,
-};
-
-function _fragName(a) {
-  if (a.fragrance_brand && a.fragrance_name) {
-    return `${a.fragrance_brand} ${a.fragrance_name}`;
-  }
-  return (a.metadata && a.metadata.fragrance_name) || 'a fragrance';
-}
-
-function _stars(a) {
-  const v = a.metadata && a.metadata.rating_value;
-  if (!v) return '';
+function _stars(row) {
+  const v = (row.metadata && (row.metadata.rating ?? row.metadata.rating_value));
+  if (v == null || v === '') return '';
   return `${parseFloat(v).toFixed(1)} stars`;
 }
 
-function _scentleGuesses(a) {
-  const g = a.metadata && a.metadata.guesses;
+function _scentleGuesses(row) {
+  const g = row.metadata && (row.metadata.guesses_count ?? row.metadata.guesses);
   if (!g) return '';
   return ` in ${g} ${g === 1 ? 'guess' : 'guesses'}`;
 }
 
-// ─── Public API ─────────────────────────────────────────────────────────────
+function _forumTitle(row, prefix) {
+  const title = row.metadata && (row.metadata.thread_title || row.metadata.title);
+  if (title) return `${prefix}: ${title}`;
+  return prefix.toLowerCase();
+}
+
+const ACTIVITY_LABELS = {
+  rating:          (r) => { const s = _stars(r); return `rated ${_fragName(r)}${s ? ' ' + s : ''}`; },
+  review:          (r) => `reviewed ${_fragName(r)}`,
+  collection_add:  (r) => `added ${_fragName(r)} to their collection`,
+  battle_vote:     (_) => `played Fragrance Battle`,
+  forum_thread:    (r) => _forumTitle(r, 'started a discussion'),
+  forum_reply:     (r) => _forumTitle(r, 'replied to'),
+  scentle_complete:(r) => `completed today's Scentle${_scentleGuesses(r)}`,
+};
+
+// ─── Display name / avatar helpers ──────────────────────────────────────────
+
+function safeDisplayName(row) {
+  const name = row.username || row.display_name;
+  if (name) return '@' + name.replace(/^@/, '');
+  return 'A MaxParfum member';
+}
+
+export function avatarHtml(avatarUrl, actor) {
+  const initial = actor && actor.length > 1
+    ? actor.replace('@', '').charAt(0).toUpperCase()
+    : '?';
+  if (avatarUrl) {
+    return `<img class="cp-avatar" src="${avatarUrl}" alt="${initial}" loading="lazy">`;
+  }
+  let hue = 38;
+  for (let i = 0; i < actor.length; i++) hue = (hue + actor.charCodeAt(i) * 7) % 360;
+  return `<div class="cp-avatar cp-avatar-initial" style="--av-hue:${hue}">${initial}</div>`;
+}
+
+// ─── Format a view row into a display object ─────────────────────────────────
+
+export function formatActivityItem(row) {
+  const actor    = safeDisplayName(row);
+  const avatarUrl= row.avatar_url || null;
+  const labelFn  = ACTIVITY_LABELS[row.activity_type];
+  const action   = labelFn ? labelFn(row) : `did something with ${_fragName(row)}`;
+
+  let url = row.target_url || null;
+  if (!url && row.fragrance_brand && row.fragrance_name) {
+    url = `fragrance.html?brand=${encodeURIComponent(row.fragrance_brand)}&name=${encodeURIComponent(row.fragrance_name)}`;
+  }
+
+  return {
+    id:             row.id,
+    actor,
+    avatarUrl,
+    action,
+    activityType:   row.activity_type,
+    fragranceBrand: row.fragrance_brand,
+    fragranceName:  row.fragrance_name,
+    url,
+    createdAt:      row.created_at,
+    metadata:       row.metadata || {},
+  };
+}
+
+// ─── Relative timestamp ───────────────────────────────────────────────────────
+
+export function timeAgo(isoString) {
+  if (!isoString) return '';
+  const diff = Date.now() - new Date(isoString).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7)  return `${d}d ago`;
+  return new Date(isoString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// ─── Public query functions ───────────────────────────────────────────────────
 
 /**
  * Fetch recent public activity for the homepage Community Pulse section.
- * @param {number} limit
- * @returns {Promise<Array>} formatted activity items
  */
 export async function getCommunityPulse(limit = 12) {
   try {
     const { data, error } = await supabase
-      .from('activity_events')
-      .select(`
-        id, created_at, activity_type,
-        fragrance_id, fragrance_brand, fragrance_name,
-        target_url, metadata,
-        profiles ( username, display_name, full_name, avatar_url )
-      `)
+      .from('community_activity_feed')
+      .select('*')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) {
-      console.warn('[CommunityPulse] activity_events query failed:', error.message);
+      console.warn('[CommunityPulse] query failed:', error.message);
       return [];
     }
     return (data || []).map(formatActivityItem);
@@ -80,23 +131,14 @@ export async function getCommunityPulse(limit = 12) {
 }
 
 /**
- * Fetch activity for a specific fragrance (detail page).
- * @param {string} brand
- * @param {string} name
- * @param {number} limit
- * @returns {Promise<Array>}
+ * Fetch activity feed for a specific fragrance (detail page).
  */
 export async function getFragranceActivity(brand, name, limit = 5) {
   if (!brand && !name) return [];
   try {
     let query = supabase
-      .from('activity_events')
-      .select(`
-        id, created_at, activity_type,
-        fragrance_brand, fragrance_name,
-        metadata,
-        profiles ( username, display_name, full_name, avatar_url )
-      `)
+      .from('community_activity_feed')
+      .select('*')
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -118,23 +160,21 @@ export async function getFragranceActivity(brand, name, limit = 5) {
 
 /**
  * Fetch aggregate community stats for a fragrance detail page.
- * Returns counts for ratings, comments, collections, and recent ratings (last 7 days).
- * @param {string} brand
- * @param {string} name
- * @returns {Promise<object|null>}
  */
 export async function getFragranceCommunityStats(brand, name) {
   if (!brand && !name) return null;
   try {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await supabase
-      .from('activity_events')
+    let query = supabase
+      .from('community_activity_feed')
       .select('activity_type, created_at')
-      .eq('is_public', true)
-      .ilike('fragrance_brand', brand || '')
-      .ilike('fragrance_name', name || '');
+      .eq('is_public', true);
 
+    if (brand) query = query.ilike('fragrance_brand', brand);
+    if (name)  query = query.ilike('fragrance_name', name);
+
+    const { data, error } = await query;
     if (error) {
       console.warn('[CommunityPulse] stats query failed:', error.message);
       return null;
@@ -142,10 +182,10 @@ export async function getFragranceCommunityStats(brand, name) {
 
     const rows = data || [];
     const stats = {
-      ratings:        rows.filter(r => r.activity_type === 'rating').length,
-      comments:       rows.filter(r => r.activity_type === 'comment' || r.activity_type === 'review').length,
-      collections:    rows.filter(r => r.activity_type === 'collection_add').length,
-      recentRatings:  rows.filter(r => r.activity_type === 'rating' && r.created_at >= weekAgo).length,
+      ratings:       rows.filter(r => r.activity_type === 'rating').length,
+      comments:      rows.filter(r => r.activity_type === 'review').length,
+      collections:   rows.filter(r => r.activity_type === 'collection_add').length,
+      recentRatings: rows.filter(r => r.activity_type === 'rating' && r.created_at >= weekAgo).length,
     };
 
     if (!stats.ratings && !stats.comments && !stats.collections) return null;
@@ -157,27 +197,21 @@ export async function getFragranceCommunityStats(brand, name) {
 }
 
 /**
- * Fetch lightweight community signals for a list of fragrances (search results).
- * Returns a map keyed by "brand|||name" (lowercased) → { ratingCount, topRater }
- * @param {Array<{brand:string, name:string}>} fragrances
- * @returns {Promise<Map>}
+ * Fetch lightweight community signals for search result cards.
+ * Returns a Map keyed by "brand|||name" (lowercased) → { ratingCount, topRater }
  */
 export async function getSearchActivityStats(fragrances) {
   if (!fragrances || !fragrances.length) return new Map();
   try {
-    // Limit to 20 to keep query lightweight
     const subset = fragrances.slice(0, 20);
-    const names = subset.map(f => f.name).filter(Boolean);
+    const names  = subset.map(f => (f.name || '').toLowerCase()).filter(Boolean);
+    if (!names.length) return new Map();
 
     const { data, error } = await supabase
-      .from('activity_events')
-      .select(`
-        fragrance_brand, fragrance_name, activity_type, created_at,
-        profiles ( username, display_name )
-      `)
+      .from('community_activity_feed')
+      .select('fragrance_brand, fragrance_name, activity_type, created_at, username, display_name')
       .eq('is_public', true)
       .eq('activity_type', 'rating')
-      .in('fragrance_name', names)
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -188,14 +222,24 @@ export async function getSearchActivityStats(fragrances) {
 
     const map = new Map();
     for (const row of (data || [])) {
-      const key = `${(row.fragrance_brand || '').toLowerCase()}|||${(row.fragrance_name || '').toLowerCase()}`;
-      if (!map.has(key)) {
-        map.set(key, { ratingCount: 0, topRater: null });
-      }
+      const rowBrand = (row.fragrance_brand || '').toLowerCase();
+      const rowName  = (row.fragrance_name  || '').toLowerCase();
+      if (!rowName) continue;
+
+      // Match against the requested fragrance list (case-insensitive in JS)
+      const matched = subset.find(f =>
+        (f.name  || '').toLowerCase() === rowName &&
+        (!f.brand || (f.brand || '').toLowerCase() === rowBrand)
+      );
+      if (!matched) continue;
+
+      const key = `${(matched.brand || '').toLowerCase()}|||${(matched.name || '').toLowerCase()}`;
+      if (!map.has(key)) map.set(key, { ratingCount: 0, topRater: null });
       const entry = map.get(key);
       entry.ratingCount++;
-      if (!entry.topRater && row.profiles) {
-        entry.topRater = safeDisplayName(row.profiles);
+      if (!entry.topRater) {
+        const name = row.username || row.display_name;
+        if (name) entry.topRater = '@' + name.replace(/^@/, '');
       }
     }
     return map;
@@ -203,74 +247,4 @@ export async function getSearchActivityStats(fragrances) {
     console.warn('[CommunityPulse] search stats unexpected error:', err.message);
     return new Map();
   }
-}
-
-/**
- * Format a raw activity_events row into a display object.
- * @param {object} row
- * @returns {object}
- */
-export function formatActivityItem(row) {
-  const profile = row.profiles || null;
-  const actor = safeDisplayName(profile);
-  const avatarUrl = safeAvatarUrl(profile);
-  const labelFn = ACTIVITY_LABELS[row.activity_type];
-  const action = labelFn ? labelFn(row) : `did something with ${_fragName(row)}`;
-
-  let url = row.target_url || null;
-  if (!url && row.fragrance_brand && row.fragrance_name) {
-    url = `fragrance.html?brand=${encodeURIComponent(row.fragrance_brand)}&name=${encodeURIComponent(row.fragrance_name)}`;
-  }
-
-  return {
-    id: row.id,
-    actor,
-    avatarUrl,
-    action,
-    activityType: row.activity_type,
-    fragranceBrand: row.fragrance_brand,
-    fragranceName: row.fragrance_name,
-    url,
-    createdAt: row.created_at,
-    metadata: row.metadata || {},
-  };
-}
-
-/**
- * Format a relative timestamp: "2 hours ago", "just now", etc.
- * @param {string} isoString
- * @returns {string}
- */
-export function timeAgo(isoString) {
-  if (!isoString) return '';
-  const diff = Date.now() - new Date(isoString).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1)  return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7)  return `${d}d ago`;
-  return new Date(isoString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-// ─── Avatar HTML helper ──────────────────────────────────────────────────────
-
-/**
- * Build a small avatar element: photo if available, else coloured initial.
- * @param {string|null} avatarUrl
- * @param {string} actor  e.g. "@scentlover"
- * @returns {string} HTML string
- */
-export function avatarHtml(avatarUrl, actor) {
-  const initial = actor && actor.length > 1
-    ? actor.replace('@', '').charAt(0).toUpperCase()
-    : '?';
-  if (avatarUrl) {
-    return `<img class="cp-avatar" src="${avatarUrl}" alt="${initial}" loading="lazy">`;
-  }
-  // Generate a deterministic hue from the actor name for colour diversity
-  let hue = 38; // gold default
-  for (let i = 0; i < actor.length; i++) hue = (hue + actor.charCodeAt(i) * 7) % 360;
-  return `<div class="cp-avatar cp-avatar-initial" style="--av-hue:${hue}">${initial}</div>`;
 }
