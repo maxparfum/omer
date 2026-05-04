@@ -18,32 +18,103 @@ async function _loadFragrancesDb() {
   }
   return _fragrancesDb;
 }
+function _prettyWords(value) {
+  if (!value) return '';
 
+  const keepLower = new Set([
+    'de', 'du', 'des', 'of', 'and', 'the', 'for', 'by', 'a', 'an', 'le', 'la'
+  ]);
+
+  const forceUpper = new Set([
+    'jpg', 'ysl', 'edt', 'edp', 'dna', 'vip'
+  ]);
+
+  return String(value)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map((word, index) => {
+      if (!word) return '';
+
+      return word
+        .split('-')
+        .map(part => {
+          const clean = part.toLowerCase();
+
+          if (forceUpper.has(clean)) return clean.toUpperCase();
+          if (index !== 0 && keepLower.has(clean)) return clean;
+
+          return clean.charAt(0).toUpperCase() + clean.slice(1);
+        })
+        .join('-');
+    })
+    .join(' ');
+}
+
+function _prettyFragranceLabel(brand, name) {
+  const b = _prettyWords(brand);
+  const n = _prettyWords(name);
+
+  if (b && n) {
+    if (n.toLowerCase().startsWith(b.toLowerCase())) return n;
+    return `${b} ${n}`;
+  }
+
+  return n || b || null;
+}
 function _fragNameFromRow(row) {
-  // 1. Direct columns on the view row
   const brand = row.fragrance_brand || (row.metadata && row.metadata.fragrance_brand);
   const name  = row.fragrance_name  || (row.metadata && row.metadata.fragrance_name);
-  if (brand && name)  return `${brand} ${name}`;
-  if (name)           return name;
-  if (brand)          return brand;
-  return null; // caller will try JSON lookup
+
+  return _prettyFragranceLabel(brand, name);
+}
+
+function _normalizeFragranceIdPart(text) {
+  if (!text) return '';
+
+  return String(text)
+    .trim()
+    .toLowerCase()
+    .replace(/\s*&\s*/g, ' and ')
+    .replace(/['"]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function _makeCanonicalFragranceId(brand, name) {
+  const b = _normalizeFragranceIdPart(brand);
+  const n = _normalizeFragranceIdPart(name);
+
+  if (b && n) return `${b}-${n}`;
+  return n || b || '';
 }
 
 function _resolveFromDb(fragId, db) {
   if (!fragId || !db || !db.length) return null;
-  const id = String(fragId).toLowerCase();
+
+  const id = _normalizeFragranceIdPart(fragId);
+
   const match = db.find(f => {
     if (!f) return false;
-    if (String(f.id || '').toLowerCase() === id) return true;
-    // canonical id pattern: "brand-name"
-    const canonical = `${(f.brand || '')}---${(f.name || '')}`.toLowerCase().replace(/\s+/g, '-');
-    return canonical === id;
+
+    const rawId = _normalizeFragranceIdPart(f.id);
+    if (rawId && rawId === id) return true;
+
+    const canonical = _makeCanonicalFragranceId(f.brand, f.name);
+    if (canonical && canonical === id) return true;
+
+    const nameOnly = _normalizeFragranceIdPart(f.name);
+    if (nameOnly && nameOnly === id) return true;
+
+    return false;
   });
+
   if (!match) return null;
-  const b = (match.brand || '').trim();
-  const n = (match.name  || '').trim();
-  if (b && n) return `${b} ${n}`;
-  return n || b || null;
+
+ const b = (match.brand || '').trim();
+const n = (match.name || '').trim();
+
+return _prettyFragranceLabel(b, n);
 }
 
 // ─── Activity type labels ────────────────────────────────────────────────────
@@ -92,19 +163,38 @@ export function avatarHtml(avatarUrl, actor) {
 // Synchronous fast path — used when the fragrances DB is already loaded.
 function _buildAction(row, resolvedFragName) {
   const type = row.activity_type;
+  const frag = resolvedFragName || 'a fragrance';
 
   if (type === 'rating') {
-    const frag = resolvedFragName || 'a fragrance';
-    const s    = _stars(row);
-    return `rated ${frag}${s ? ' ' + s : ''}`;
+    const s = _stars(row);
+    return `Rated ${frag}${s ? ' ' + s : ''}`;
   }
-  if (type === 'review')         return `reviewed ${resolvedFragName || 'a fragrance'}`;
-  if (type === 'collection_add') return `added ${resolvedFragName || 'a fragrance'} to their collection`;
-  if (type === 'battle_vote')    return `played Fragrance Battle`;
-  if (type === 'forum_thread')   return `started a discussion`;
-  if (type === 'forum_reply')    return `replied to a discussion`;
-  if (type === 'scentle_complete') return `completed today's Scentle${_scentleGuesses(row)}`;
-  return `did something with ${resolvedFragName || 'a fragrance'}`;
+
+  if (type === 'review') {
+    return `Reviewed ${frag}`;
+  }
+
+  if (type === 'collection_add') {
+    return `Added ${frag} to their collection`;
+  }
+
+  if (type === 'battle_vote') {
+    return `Played Fragrance Battle`;
+  }
+
+  if (type === 'forum_thread') {
+    return `Started a discussion`;
+  }
+
+  if (type === 'forum_reply') {
+    return `Replied to a discussion`;
+  }
+
+  if (type === 'scentle_complete') {
+    return `Completed today's Scentle${_scentleGuesses(row)}`;
+  }
+
+  return `Did something with ${frag}`;
 }
 
 // Async version that resolves fragrance name from JSON if needed.
@@ -155,10 +245,14 @@ export function formatActivityItem(row) {
   }
   const action = _buildAction(row, resolvedFragName);
 
-  let url = row.target_url || null;
-  if (!url && row.fragrance_brand && row.fragrance_name) {
-    url = `fragrance.html?brand=${encodeURIComponent(row.fragrance_brand)}&name=${encodeURIComponent(row.fragrance_name)}`;
-  }
+ let url = row.target_url || null;
+
+const directBrand = row.fragrance_brand || (row.metadata && row.metadata.fragrance_brand);
+const directName = row.fragrance_name || (row.metadata && row.metadata.fragrance_name);
+
+if (!url && directBrand && directName) {
+  url = `fragrance.html?brand=${encodeURIComponent(directBrand)}&name=${encodeURIComponent(directName)}`;
+}
 
   return {
     id:             row.id,
