@@ -64,25 +64,27 @@
   color: #C2C2C2;
 }
    .main-content {
-  min-height: 100vh;
+  min-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   text-align: center;
-  padding-bottom: 18vh;
+  padding-top: 15rem;
+  padding-bottom: 5rem;
+  gap: 2.8rem;
   background: url('https://mir-s3-cdn-cf.behance.net/project_modules/1400/6c5b83172650551.6482b548c7660.png') no-repeat center center;
   background-size: 120%;
-  background-position: center 25%;
+  background-position: center 28%;
 }
 
-    .hero-content-block {
+  .hero-content-block {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
   width: 100%;
-  margin-bottom: 8vh;
+  margin-bottom: 0;
 }
 
     #search-container {
@@ -1451,11 +1453,15 @@
   }
 
   .main-content {
-    background-size: cover;
-    background-position: center top;
-    max-width: 100vw;
-    overflow-x: hidden;
-  }
+  justify-content: flex-start;
+  padding-top: 5.2rem;
+  padding-bottom: 3rem;
+  gap: 2rem;
+  background-size: cover;
+  background-position: center top;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
 
   .hero-content-block {
     width: 100%;
@@ -1511,8 +1517,8 @@
 /* ── Community Pulse ───────────────────────────────────────────── */
 .community-pulse {
   width: 100%;
-  max-width: 1100px;
-  margin: 0 auto 56px;
+  max-width: 1180px;
+  margin: 0 auto 24px;
   padding: 0 20px;
 }
 
@@ -1560,16 +1566,24 @@
 
 /* Activity card */
 .cp-card {
-  background: linear-gradient(145deg, rgba(16,13,8,0.94), rgba(6,5,3,0.98));
-  border: 1px solid rgba(212,175,55,0.18);
-  border-radius: 14px;
-  padding: 14px 14px 12px;
+  background:
+    radial-gradient(circle at top left, rgba(212,175,55,0.18), transparent 38%),
+    linear-gradient(145deg, rgba(32, 24, 13, 0.82), rgba(10, 8, 5, 0.78));
+  border: 1px solid rgba(212,175,55,0.34);
+  border-radius: 16px;
+  padding: 16px 16px 14px;
+  min-height: 112px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  gap: 9px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   text-decoration: none;
   cursor: default;
+  box-shadow:
+    0 10px 26px rgba(0,0,0,0.34),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .cp-card[href] {
@@ -1577,8 +1591,14 @@
 }
 
 .cp-card[href]:hover {
-  border-color: rgba(212,175,55,0.42);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  border-color: rgba(212,175,55,0.72);
+  background:
+    radial-gradient(circle at top left, rgba(212,175,55,0.25), transparent 42%),
+    linear-gradient(145deg, rgba(42, 30, 14, 0.9), rgba(13, 10, 6, 0.82));
+  box-shadow:
+    0 14px 34px rgba(0,0,0,0.46),
+    0 0 18px rgba(212,175,55,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
 .cp-card-top {
@@ -1619,10 +1639,11 @@
 }
 
 .cp-action {
-  font-family: 'Montserrat', sans-serif;
-  font-size: 0.72rem;
-  color: rgba(220,220,220,0.82);
-  line-height: 1.35;
+  font-family: 'Cinzel', serif;
+  font-size: 0.78rem;
+  color: rgba(245,245,245,0.9);
+  line-height: 1.42;
+  letter-spacing: 0.015em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1631,8 +1652,8 @@
 
 .cp-time {
   font-family: 'Montserrat', sans-serif;
-  font-size: 0.62rem;
-  color: rgba(194,194,194,0.42);
+  font-size: 0.64rem;
+  color: rgba(212,175,55,0.55);
   margin-top: auto;
 }
 
